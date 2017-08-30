@@ -162,19 +162,29 @@ def model(maskedWord, guesses):
                 count = min(count,4)
                 prev = tuple(prev[:count])
                 count+=1
+                max_count = count
+                max_prob = -1
+                max_opt = random.choice(string.letters)
                 if prev[:(count-1)] not in ngram_reverse_model[count]:
                     while count>=2:
                         if prev[:(count-1)] in ngram_reverse_model[count]:
                             for k,v in sorted(ngram_reverse_model[count][prev[:(count-1)]].items(), key=operator.itemgetter(1), reverse=True):
                                 #print "Option : ", k, count
                                 if k not in guesses:
-                                    #print "Returning ", k
-                                    return k
+                                    if (float(v)/len(ngram_reverse_model[count][prev[:(count-1)]])) > max_prob:
+                                        max_prob = (float(v))/len(ngram_reverse_model[count][prev[:(count-1)]])
+                                        max_opt = k
+
                         count -= 1
-                    return use_letter_freq(size, guesses)
+                        print "Count done"
+                    if max_prob == -1:
+                        return "Default"
+                        return use_letter_freq(size, guesses)
+                    else:
+                        print "Max opt", max_opt
+                        return max_opt
                 for k,v in sorted(ngram_reverse_model[count][prev].items(), key=operator.itemgetter(1), reverse=True):
                     if k not in guesses:
-                        #print "Returning1 ", k
                         return k
             if maskedWord[i] == '_':
                 count = 0
@@ -194,7 +204,6 @@ def model(maskedWord, guesses):
                 count += 1
                 for k,v in sorted(ngram_model[count][prev].items(), key=operator.itemgetter(1), reverse=True):
                     if k not in guesses:
-                        #print 'Returning1'
                         return k
         return use_letter_freq(size, guesses)    
 
@@ -238,7 +247,7 @@ for line in f:
     if count == 1:
         continue
     predictedWord, guesses = hangman(line)
-    print predictedWord, line
+    #print predictedWord, line
     l = loss(line, predictedWord)
     distance += l
 print distance/count
