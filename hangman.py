@@ -2,6 +2,7 @@ import editdistance
 import operator
 import cPickle as pickle
 from string import ascii_lowercase
+import string
 import random
 from nltk.util import ngrams
 
@@ -20,102 +21,112 @@ def train_letterfrequency():
             else:
                 model[len(word)][c] += 1
        
-    f = open("model.pkl","wb")
+    f = open("letter_freq_model.pkl","wb")
     print count
     pickle.dump(model, f, -1) 
     return model
 
 def train_ngrams():
-    count = 0
     f = open("train.txt")
-    bigram_model = {}
-    trigram_model = {}
     for line in f:
-        count+=1
-        word = line.strip().split()[0]
-        if len(word) not in bigram_model:
-            bigram_model[len(word)] = {}
-            trigram_model[len(word)] = {}
-        chars = [c for c in word]
-        bigrams = ngrams(chars,2)
-        trigrams = ngrams(chars, 3)
+        line = line.strip()
+        bigrams = ngrams(line, 2)
+        trigrams = ngrams(line, 3)
+        quadgrams = ngrams(line, 4)
+        pentagrams = ngrams(line, 5)
+        model = {}
+        model[2] = {}
+        model[3] = {}
+        model[4] = {}
+        model[5] = {}
+        for c in ascii_lowercase:
+            model[2][c] = {}
         for bigram in bigrams:
-            if bigram[0] not in bigram_model[len(word)]:
-                bigram_model[len(word)][bigram[0]] = {}
-            if bigram[1] not in bigram_model[len(word)][bigram[0]]:
-                bigram_model[len(word)][bigram[0]][bigram[1]] = 1
-            else:
-                bigram_model[len(word)][bigram[0]][bigram[1]] += 1
+            a,b = bigram
+            if a not in model[2]:
+                model[2][a] = {}
+            if b not in model[2][a]:
+                model[2][a][b] = 0
+            model[2][a][b] += 1
         for trigram in trigrams:
             a,b,c = trigram
-            if (a,b) not in trigram_model[len(word)]:
-                trigram_model[len(word)][(a,b)] = {}
-            if c not in trigram_model[len(word)][(a,b)]:
-                trigram_model[len(word)][(a,b)][c] = 1
-            else:
-                trigram_model[len(word)][(a,b)][c] += 1
-    f = open("bigram_model.pkl","wb")
-    pickle.dump(bigram_model, f, -1) 
-    f = open("trigram_model.pkl","wb")
-    pickle.dump(trigram_model, f, -1) 
-    print "Finished training"
-    return bigram_model
+            a = (a,b)
+            b = c
+            if a not in model[3]:
+                model[3][a] = {}
+            if b not in model[3][a]:
+                model[3][a][b] = 0
+            model[3][a][b] += 1
+        for quadgram in quadgrams:
+            a,b,c,d = quadgram
+            a = (a,b,c)
+            b = d
+            if a not in model[4]:
+                model[4][a] = {}
+            if b not in model[4][a]:
+                model[4][a][b] = 0
+            model[4][a][b] += 1
+        for pentagram in pentagrams:
+            a,b,c,d,e = pentagram
+            a = (a,b,c,d)
+            b = d
+            if a not in model[5]:
+                model[5][a] = {}
+            if b not in model[5][a]:
+                model[5][a][b] = 0
+            model[5][a][b] += 1
+    f = open("ngram_model.pkl","wb")
+    pickle.dump(model, f, -1)
+    print "N-Grams training complete"
 
 #train_letterfrequency()
 #train_ngrams()
-letter_freq_model = pickle.load(open("model.pkl"))
-trained_model = pickle.load(open('bigram_model.pkl'))
-trained_tri_model = pickle.load(open('trigram_model.pkl'))
-
- # return some letter not in guesses
-def getRandomLetter(guesses):
-    letters = []
-    for c in ascii_lowercase:
-        letters.append(c)
-    random.shuffle(letters)
-    for l in letters:
-        if l not in guesses:
-            return l
+ngram_model = pickle.load(open('ngram_model.pkl'))
+letter_freq_model = pickle.load(open('letter_freq_model.pkl'))
 
 def use_letter_freq(size, guesses):
     for k,v in sorted(letter_freq_model[size].items(), key=operator.itemgetter(1), reverse=True):
         if k not in guesses:
             return k
             break
-    return getRandomLetter(guesses)
+    return random.choice(string.letters)
 
 def model(maskedWord, guesses):
-    # create model here
+    # N-Grams without length
     size = len(maskedWord)
-    if size not in trained_model:
-        return getRandomLetter(guesses)
+    if maskedWord == '_'*len(maskedWord):
+        # cold start
+        for k, v in sorted(letter_freq_model[size].items(), key=operator.itemgetter(1), reverse=True):
+            if k not in guesses:
+                return k
+        return random.choice(string.letters)
+    else:
+        j = len(maskedWord)-1
+        for i in reversed(range(0, len(maskedWord))):
+            if i == 0:
+                return use_letter_freq(size, guesses)
+            if maskedWord[i] == '_':
+                count = 0
+                j = i-1
+                prev = []
+                while j>=0 and maskedWord[j] != '_' and count<=3:
+                    j -= 1
+                    count += 1
+                    prev.append(maskedWord[j])
+                if len(prev) != 0:
+                    prev.reverse()
+                    prev = tuple(prev)
+                else:
+                    prev = ()
+                if count == 0 or prev not in ngram_model[count+1]:
+                    return use_letter_freq(size, guesses)
+                count += 1
+                for k,v in sorted(ngram_model[count][prev].items(), key=operator.itemgetter(1), reverse=True):
+                    if k not in guesses:
+                        return k
+        return use_letter_freq(size, guesses)    
 
-    # for dry start (all _)
-    if len(maskedWord) == maskedWord.count('_'):
-        # guess the most common letter in words of that length
-        return use_letter_freq(size, guesses)
-    
-    # for further guesses, use a bigram model
-    for i in range(0, len(maskedWord)):
-        if maskedWord[i] == '_':
-            if i == 0 or maskedWord[i-1] == '_':
-                continue
-            if i>=2 and maskedWord[i-1]!='_' and maskedWord[i-2]!='_' and (maskedWord[i-2], maskedWord[i-1]) in trained_tri_model[size]:
-                for k,v in sorted(trained_tri_model[size][(maskedWord[i-2], maskedWord[i-1])].items(), key=operator.itemgetter(1), reverse=True):
-                    if k not in guesses:
-                        return k
-                        break
-            else:
-                for k,v in sorted(trained_model[size][maskedWord[i-1]].items(), key=operator.itemgetter(1), reverse=True):
-                    if k not in guesses:
-                        return k
-                        break
-            break
-    
-    if maskedWord[i] == '_':
-        return use_letter_freq(size, guesses)
-    
-    return getRandomLetter(guesses)
+
 
 def hangman(solution):
     guesses = {}
@@ -150,5 +161,8 @@ for line in f:
     if count == 1:
         continue
     predictedWord, guesses = hangman(line)
-    distance += loss(line, predictedWord)
+    l = loss(line, predictedWord)
+    distance += l
+    if l>0:
+        print predictedWord, line, l
 print distance/count
