@@ -1,253 +1,419 @@
+from __future__ import division
 import editdistance
-import operator
-import cPickle as pickle
+import pickle
 from string import ascii_lowercase
-import string
 import random
-from nltk.util import ngrams
-from random import randint
+from collections import defaultdict
+import csv
 
-def train_letterfrequency():
+#Ratios for interpolation 
+FIVE=3
+FOUR=1
+THREE=1
+TWO=3
+
+def train():
     count = 0
     f = open("train.txt")
-    model = {}
+    model5 = defaultdict(lambda : defaultdict(lambda : defaultdict (lambda : defaultdict(lambda : defaultdict(int)))))
+    model4 = defaultdict(lambda : defaultdict (lambda : defaultdict(lambda : defaultdict(int))))
+    model = defaultdict(lambda : defaultdict(lambda : defaultdict(int)))
+    model1 = defaultdict(lambda : defaultdict(lambda : defaultdict(int)))
+    model2 = defaultdict(lambda : defaultdict(int))
     for line in f:
         count+=1
-        word = line.strip().split()[0]
-        if len(word) not in model:
-            model[len(word)] = {}
-        for c in word:
-            if c not in model[len(word)]:
-                model[len(word)][c] = 1
-            else:
-                model[len(word)][c] += 1
-       
-    f = open("letter_freq_model.pkl","wb")
-    print count
-    pickle.dump(model, f, -1) 
-    return model
+        word = line.strip()
+        model1[len(word)][word[0]][word[1]]+=1
+        model2[len(word)][word[0]]+=1
+        for i in range(1,len(word)-3) :
+            try :
+                model[word[i-1]][word[i]][word[i+1]]+=1
+                model1[len(word)][word[i]][word[i+1]]+=1
+                model2[len(word)][word[i]]+=1
+                model4[word[i-1]][word[i]][word[i+1]][word[i+2]]+=1
+                model5[word[i-1]][word[i]][word[i+1]][word[i+2]][word[i+3]]+=1
+            except :
+                continue
+        i=len(word)-3
+        model2[len(word)][word[i]]+=1
+        model2[len(word)][word[i+1]]+=1
+        model2[len(word)][word[i+2]]+=1
+        model1[len(word)][word[i]][word[i+1]]+=1
+        model1[len(word)][word[i+1]][word[i+2]]+=1
+        model[word[i-1]][word[i]][word[i+1]]+=1
+        model[word[i]][word[i+1]][word[i+2]]+=1
+        model4[word[i-1]][word[i]][word[i+1]][word[i+2]]+=1
 
-def train_ngrams():
-    f = open("train.txt")
-    reverse_model = {}
-    reverse_model[2] = {}
-    reverse_model[3] = {}
-    reverse_model[4] = {}
-    reverse_model[5] = {}
-    model = {}
-    model[2] = {}
-    model[3] = {}
-    model[4] = {}
-    model[5] = {}
-    for line in f:
-        line = line.strip()
-        bigrams = ngrams(line, 2)
-        trigrams = ngrams(line, 3)
-        quadgrams = ngrams(line, 4)
-        pentagrams = ngrams(line, 5)
-        for bigram in bigrams:
-            a,b = bigram
-            if a not in model[2]:
-                model[2][a] = {}
-            if b not in model[2][a]:
-                model[2][a][b] = 0
-            model[2][a][b] += 1
-            b,a = bigram
-            if a not in reverse_model[2]:
-                reverse_model[2][a] = {}
-            if b not in reverse_model[2][a]:
-                reverse_model[2][a][b] = 0
-            reverse_model[2][a][b] += 1
+    return model, model1, model2, model4, model5
 
-        for trigram in trigrams:
-            a,b,c = trigram
-            a = (a,b)
-            b = c
-            if a not in model[3]:
-                model[3][a] = {}
-            if b not in model[3][a]:
-                model[3][a][b] = 0
-            model[3][a][b] += 1
-            x,b,c = trigram
-            a = (b,c)
-            b = x
-            if a not in reverse_model[3]:
-                reverse_model[3][a] = {}
-            if b not in reverse_model[3][a]:
-                reverse_model[3][a][b] = 0
-            reverse_model[3][a][b] += 1
+model, model1, model2, model4, model5 = train()
 
-        for quadgram in quadgrams:
-            a,b,c,d = quadgram
-            a = (a,b,c)
-            b = d
-            if a not in model[4]:
-                model[4][a] = {}
-            if b not in model[4][a]:
-                model[4][a][b] = 0
-            model[4][a][b] += 1
-            x,b,c,d = quadgram
-            a = (b,c,d)
-            b = x
-            if a not in reverse_model[4]:
-                reverse_model[4][a] = {}
-            if b not in reverse_model[4][a]:
-                reverse_model[4][a][b] = 0
-            reverse_model[4][a][b] += 1
+# return some letter not in guesses
+def getRandomLetter(guesses):
+    letters = []
+    highPriorityLetters = ['a','e','o','i','u','y']
+    for c in ascii_lowercase:
+        letters.append(c)
+    random.shuffle(letters)
+    letters = highPriorityLetters + letters
+    for l in letters:
+        if l not in guesses:
+            return l
 
-        for pentagram in pentagrams:
-            a,b,c,d,e = pentagram
-            a = (a,b,c,d)
-            b = d
-            if a not in model[5]:
-                model[5][a] = {}
-            if b not in model[5][a]:
-                model[5][a][b] = 0
-            model[5][a][b] += 1
-            x,b,c,d,e = pentagram
-            a = (b,c,d,e)
-            b = x
-            if a not in reverse_model[5]:
-                reverse_model[5][a] = {}
-            if b not in reverse_model[5][a]:
-                reverse_model[5][a][b] = 0
-            reverse_model[5][a][b] += 1
-    f = open("ngram_model.pkl","wb")
-    pickle.dump((model,reverse_model), f, -1)
-    print "N-Grams training complete"
+def unigram(maskedWord, guesses, probabilities) :
+    #probabilities = [0]*26
+    maxProb = 0
+    predictedCharacter = ''
+    for i,c in enumerate(ascii_lowercase) :
+        if model2[len(maskedWord)][c] > maxProb and c not in guesses:
+            maxProb = model2[len(maskedWord)][c]
+            predictedCharacter = c
+    if predictedCharacter !='' : 
+        return predictedCharacter
+    else : 
+        return getRandomLetter(guesses)
 
-#train_letterfrequency()
-#train_ngrams()
-ngram_model, ngram_reverse_model = pickle.load(open('ngram_model.pkl'))
-letter_freq_model = pickle.load(open('letter_freq_model.pkl'))
+def fivegram(maskedWord, guesses) :
+    probabilities = [0.0]*26
+    maxProb = 0
+    predictedCharacter = ''
+    for i in range(len(maskedWord)-4) :
+        if maskedWord[i] == '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]!= '_' and maskedWord[i+3]!='_' and maskedWord[i+4]!='_':
+            letter1 = maskedWord[i+1]
+            letter2 = maskedWord[i+2]
+            letter3 = maskedWord[i+3]
+            letter4 = maskedWord[i+4]
+            count = 0
+            for c in ascii_lowercase:
+                if model5[c][letter1][letter2][letter3][letter4] > 0 and c not in guesses:
+                    currCount = model5[c][letter1][letter2][letter3][letter4]
+                    count+=model5[c][letter1][letter2][letter3][letter4]
 
+            for i,c in enumerate(ascii_lowercase):
+                if model5[c][letter1][letter2][letter3][letter4] > 0 and c not in guesses:
+                    currCount = model5[c][letter1][letter2][letter3][letter4]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
 
-def use_letter_freq(size, guesses):
-    for k,v in sorted(letter_freq_model[size].items(), key=operator.itemgetter(1), reverse=True):
-        if k not in guesses:
-            #print "Using letter"
-            return k
-            break
-    return random.choice(string.letters)
+        elif maskedWord[i] != '_' and maskedWord[i+1]== '_' and maskedWord[i+2]!= '_' and maskedWord[i+3]!='_' and maskedWord[i+4]!='_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+2]
+            letter3 = maskedWord[i+3]
+            letter4 = maskedWord[i+4]
+            count = 0
+            for c in ascii_lowercase:
+                if model5[letter1][c][letter2][letter3][letter4] > 0 and c not in guesses:
+                    currCount = model5[letter1][c][letter2][letter3][letter4]
+                    count+=model5[letter1][c][letter2][letter3][letter4]
 
-def model(maskedWord, guesses):
-    # N-Grams without length
-    size = len(maskedWord)
-    #print maskedWord
-    if maskedWord == '_'*len(maskedWord):
-        # cold start
-        for k, v in sorted(letter_freq_model[size].items(), key=operator.itemgetter(1), reverse=True):
-            if k not in guesses:
-                return k
-        return random.choice(string.letters)
-    else:
-        #print maskedWord
-        j = len(maskedWord)-1
-        choice = randint(0,1)
-        # if choice == 1:
-        #     w = reversed(range(0, len(maskedWord)))
-        # else:
-        #     w = range(0, len(maskedWord))
-        for i in reversed(range(0, len(maskedWord))):
-            if i == 0 and maskedWord[i] == '_':
-                count = 1
-                maxi = 0
-                prev = []
-                while count<min(5,len(maskedWord)) and maskedWord[count] != '_':
-                    prev.append(maskedWord[count])
-                    count+=1 
-                count-=1
-                if count == 0:
-                    return use_letter_freq(size, guesses)
-                count = min(count,4)
-                prev = tuple(prev[:count])
-                count+=1
-                max_count = count
-                max_prob = -1
-                max_opt = random.choice(string.letters)
-                if prev[:(count-1)] not in ngram_reverse_model[count]:
-                    while count>=2:
-                        if prev[:(count-1)] in ngram_reverse_model[count]:
-                            for k,v in sorted(ngram_reverse_model[count][prev[:(count-1)]].items(), key=operator.itemgetter(1), reverse=True):
-                                #print "Option : ", k, count
-                                if k not in guesses:
-                                    if (float(v)/len(ngram_reverse_model[count][prev[:(count-1)]])) > max_prob:
-                                        max_prob = (float(v))/len(ngram_reverse_model[count][prev[:(count-1)]])
-                                        max_opt = k
+            for i,c in enumerate(ascii_lowercase):
+                if model5[letter1][c][letter2][letter3][letter4] > 0 and c not in guesses:
+                    currCount = model5[letter1][c][letter2][letter3][letter4]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
 
-                        count -= 1
-                        print "Count done"
-                    if max_prob == -1:
-                        return "Default"
-                        return use_letter_freq(size, guesses)
-                    else:
-                        print "Max opt", max_opt
-                        return max_opt
-                for k,v in sorted(ngram_reverse_model[count][prev].items(), key=operator.itemgetter(1), reverse=True):
-                    if k not in guesses:
-                        return k
-            if maskedWord[i] == '_':
-                count = 0
-                j = i-1
-                prev = []
-                while j>=0 and maskedWord[j] != '_' and count<=3:
-                    j -= 1
-                    count += 1
-                    prev.append(maskedWord[j])
-                if len(prev) != 0:
-                    prev.reverse()
-                    prev = tuple(prev)
-                else:
-                    prev = ()
-                if count == 0 or prev not in ngram_model[count+1]:
-                    return use_letter_freq(size, guesses)
-                count += 1
-                for k,v in sorted(ngram_model[count][prev].items(), key=operator.itemgetter(1), reverse=True):
-                    if k not in guesses:
-                        return k
-        return use_letter_freq(size, guesses)    
+        elif maskedWord[i] != '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]== '_' and maskedWord[i+3]!='_' and maskedWord[i+4]!='_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+1]
+            letter3 = maskedWord[i+3]
+            letter4 = maskedWord[i+4]
+            count = 0
+            for c in ascii_lowercase:
+                if model5[letter1][letter2][c][letter3][letter4] > 0 and c not in guesses:
+                    currCount = model5[letter1][letter2][c][letter3][letter4]
+                    count+=model5[letter1][letter2][c][letter3][letter4]
 
+            for i,c in enumerate(ascii_lowercase):
+                if model5[letter1][letter2][c][letter3][letter4] > 0 and c not in guesses:
+                    currCount = model5[letter1][letter2][c][letter3][letter4]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
 
+        elif maskedWord[i] != '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]!= '_' and maskedWord[i+3]=='_' and maskedWord[i+4]!='_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+1]
+            letter3 = maskedWord[i+2]
+            letter4 = maskedWord[i+4]
+            count = 0
+            for c in ascii_lowercase:
+                if model5[letter1][letter2][letter3][c][letter4] > 0 and c not in guesses:
+                    currCount = model5[letter1][letter2][letter3][c][letter4]
+                    count+=model5[letter1][letter2][letter3][c][letter4]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model5[letter1][letter2][letter3][c][letter4] > 0 and c not in guesses:
+                    currCount = model5[letter1][letter2][letter3][c][letter4]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+        elif maskedWord[i] != '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]!= '_' and maskedWord[i+3]!='_' and maskedWord[i+4]=='_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+1]
+            letter3 = maskedWord[i+2]
+            letter4 = maskedWord[i+3]
+            count = 0
+            for c in ascii_lowercase:
+                if model5[letter1][letter2][letter3][letter4][c] > 0 and c not in guesses:
+                    currCount = model5[letter1][letter2][letter3][letter4][c]
+                    count+=model5[letter1][letter2][letter3][letter4][c]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model5[letter1][letter2][letter3][letter4][c] > 0 and c not in guesses:
+                    currCount = model5[letter1][letter2][letter3][letter4][c]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+    for i,item in enumerate(probabilities) :
+        probabilities[i] = item*FIVE
+    return fourgram(maskedWord, guesses, probabilities)
+
+def fourgram(maskedWord, guesses, probabilities1) :
+    probabilities = [0.0]*26
+    maxProb = 0
+    predictedCharacter = ''
+    for i in range(len(maskedWord)-3) :
+        if maskedWord[i] == '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]!= '_' and maskedWord[i+3]!='_':
+            letter1 = maskedWord[i+1]
+            letter2 = maskedWord[i+2]
+            letter3 = maskedWord[i+3]
+            count = 0
+            for c in ascii_lowercase:
+                if model4[c][letter1][letter2][letter3] > 0 and c not in guesses:
+                    currCount = model4[c][letter1][letter2][letter3]
+                    count+=model4[c][letter1][letter2][letter3]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model4[c][letter1][letter2][letter3] > 0 and c not in guesses:
+                    currCount = model4[c][letter1][letter2][letter3]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+        elif maskedWord[i] != '_' and maskedWord[i+1]== '_' and maskedWord[i+2]!= '_' and maskedWord[i+3]!='_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+2]
+            letter3 = maskedWord[i+3]
+            count = 0
+            for c in ascii_lowercase:
+                if model4[letter1][c][letter2][letter3] > 0 and c not in guesses:
+                    currCount = model4[letter1][c][letter2][letter3]
+                    count+=model4[letter1][c][letter2][letter3]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model4[letter1][c][letter2][letter3] > 0 and c not in guesses:
+                    currCount = model4[letter1][c][letter2][letter3]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+        elif maskedWord[i] != '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]== '_' and maskedWord[i+3]!='_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+1]
+            letter3 = maskedWord[i+3]
+            count = 0
+            for c in ascii_lowercase:
+                if model4[letter1][letter2][c][letter3] > 0 and c not in guesses:
+                    currCount = model4[letter1][letter2][c][letter3]
+                    count+=model4[letter1][letter2][c][letter3]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model4[letter1][letter2][c][letter3] > 0 and c not in guesses:
+                    currCount = model4[letter1][letter2][c][letter3]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+        elif maskedWord[i] != '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]!= '_' and maskedWord[i+3]=='_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+1]
+            letter3 = maskedWord[i+3]
+            count = 0
+            for c in ascii_lowercase:
+                if model4[letter1][letter2][c][letter3] > 0 and c not in guesses:
+                    currCount = model4[letter1][letter2][c][letter3]
+                    count+=model4[letter1][letter2][c][letter3]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model4[letter1][letter2][c][letter3] > 0 and c not in guesses:
+                    currCount = model4[letter1][letter2][c][letter3]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+    for i,item in enumerate(probabilities) :
+        probabilities[i] = item*FOUR + probabilities1[i]
+    return trigram(maskedWord, guesses, probabilities)
+
+def trigram(maskedWord, guesses, probabilities1) :
+    probabilities = [0.0]*26
+    maxProb = 0
+    predictedCharacter = ''
+    for i in range(len(maskedWord)-2) :
+        if maskedWord[i] == '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]!= '_':
+            letter1 = maskedWord[i+1]
+            letter2 = maskedWord[i+2]
+            count = 0
+            for c in ascii_lowercase:
+                if model[c][letter1][letter2] > 0 and c not in guesses:
+                    currCount = model[c][letter1][letter2]
+                    count+=model[c][letter1][letter2]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model[c][letter1][letter2] > 0 and c not in guesses:
+                    currCount = model[c][letter1][letter2]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+        elif maskedWord[i] != '_' and maskedWord[i+1]== '_' and maskedWord[i+2]!= '_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+2]
+            count = 0
+            for c in ascii_lowercase:
+                if model[letter1][c][letter2] > 0 and c not in guesses:
+                    currCount = model[letter1][c][letter2]
+                    count+=model[letter1][c][letter2]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model[letter1][c][letter2] > 0 and c not in guesses:
+                    currCount = model[letter1][c][letter2]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+        elif maskedWord[i] != '_' and maskedWord[i+1]!= '_' and maskedWord[i+2]== '_':
+            letter1 = maskedWord[i]
+            letter2 = maskedWord[i+1]
+            count = 0
+            for c in ascii_lowercase:
+                if model[letter1][letter2][c] > 0 and c not in guesses:
+                    currCount = model[letter1][letter2][c]
+                    count+=model[letter1][letter2][c]
+
+            for i,c in enumerate(ascii_lowercase):
+                if model[letter1][letter2][c] > 0 and c not in guesses:
+                    currCount = model[letter1][letter2][c]
+                    if count > 0 : probabilities[i]+=((currCount)/(count))
+                    if probabilities[i] > maxProb :
+                        maxProb = probabilities[i]
+                        predictedCharacter = c
+
+    for i,item in enumerate(probabilities) :
+        probabilities[i] = item*THREE + probabilities1[i]
+    return bigram(maskedWord, guesses, probabilities)
+
+def bigram(maskedWord, guesses, probabilities1) :
+    probabilities = [0.0]*26
+    indexList = []
+    indexList1 = []
+    maskCount = 0
+    for i in range(len(maskedWord)-1) :
+        if maskedWord[i] != '_' and maskedWord[i+1] == '_' :
+            indexList.append(i)
+
+    for i in range(1,len(maskedWord)) :
+        if maskedWord[i] != '_' and maskedWord[i-1] == '_' :
+            indexList1.append(i)
+
+    maxProb = 0
+    predictedCharacter = ''
+    for item in indexList :
+        currentLetter = maskedWord[item]
+        count = 0
+        for c in ascii_lowercase:
+            if model1[len(maskedWord)][currentLetter][c] > 0 and c not in guesses:
+                currCount = model1[len(maskedWord)][currentLetter][c]
+                count+=model1[len(maskedWord)][currentLetter][c]
+
+        for i,c in enumerate(ascii_lowercase):
+            if model1[len(maskedWord)][currentLetter][c] > 0 and c not in guesses:
+                currCount = model1[len(maskedWord)][currentLetter][c]
+                probabilities[i]+=( (currCount/count) )
+                if probabilities[i] > maxProb :
+                    maxProb = probabilities[i]
+                    predictedCharacter = c
+
+    for item in indexList1 :
+        currentLetter = maskedWord[item]
+        count = 0
+        for c in ascii_lowercase:
+            if model1[len(maskedWord)][c][currentLetter] > 0 and c not in guesses:
+                currCount = model1[len(maskedWord)][c][currentLetter]
+                count+=model1[len(maskedWord)][c][currentLetter]
+
+        for i,c in enumerate(ascii_lowercase):
+            if model1[len(maskedWord)][c][currentLetter] > 0 and c not in guesses:
+                currCount = model1[len(maskedWord)][c][currentLetter]
+                probabilities[i]+=( (currCount/count) )
+                if probabilities[i] > maxProb :
+                    maxProb = probabilities[i]
+                    predictedCharacter = c
+
+    for i,item in enumerate(probabilities) :
+        probabilities[i] = item*TWO + probabilities1[i]
+        if probabilities[i] > maxProb : 
+            maxProb = probabilities[i]
+            predictedCharacter = ascii_lowercase[i]
+
+    if maxProb > 0 : 
+        return predictedCharacter
+    else : 
+        return unigram(maskedWord, guesses, probabilities)
 
 def hangman(solution):
-    guesses = {}
+    guesses = []
     wrongGuess = 0
-    maskedWord = "_"*len(solution)
+    maskedWord = ['_']*len(solution)
     while wrongGuess < 8 and '_' in maskedWord:
-        predictedCharacter = model(maskedWord, guesses)
-        if predictedCharacter in guesses:
-            continue
-        guesses[predictedCharacter] = 1
+        predictedCharacter = fivegram(maskedWord, guesses)
+        if predictedCharacter not in guesses:
+            guesses.append(predictedCharacter)
         if predictedCharacter in solution:
-            chars = list(maskedWord)
             for i in range(0, len(solution)):
                 if solution[i] == predictedCharacter:
-                    chars[i] = predictedCharacter
-            maskedWord = ''.join(chars)
+                    maskedWord[i] = predictedCharacter
         else:
             wrongGuess += 1
-        #print maskedWord, wrongGuess
 
     return maskedWord, guesses
 
 def loss(solution, prediction):
     # find the levenshtein distance between the two words
-    count = 0
-    for i in range(0, len(solution)):
-        if solution[i] != prediction[i]:
-            count+=1
-    return count
+    return editdistance.eval(solution, prediction)
 
-f = open("test.txt")
-count = 0.0
+
+count = 0
 distance = 0.0
-for line in f:
-    line = line.strip().split(',')[1]
-    count += 1
-    if count == 1:
-        continue
-    predictedWord, guesses = hangman(line)
-    #print predictedWord, line
-    l = loss(line, predictedWord)
-    distance += l
-print distance/count
+with open("test.txt","r") as infile :
+    with open('output.tsv', 'wb') as tsvfile:
+        spamwriter = csv.writer(tsvfile, delimiter='\t')
+        spamwriter.writerow(["Id","Output","PredictedCharacters"])
+        for line in infile:
+            line = line.strip().split(',')[1]
+            count += 1
+            if count==1 : continue
+            print count
+            predictedWord = ""
+            maskedWord, guesses = hangman(line)
+            for item in maskedWord :
+                predictedWord+=item
+            if predictedWord != line : print predictedWord,line,guesses
+            distance += loss(line, predictedWord)
+            spamwriter.writerow([count-1,predictedWord,guesses])
+print distance/(count-1)
